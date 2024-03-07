@@ -1,0 +1,91 @@
+#include <stdint.h>
+#include <stdio.h>
+#include "uop_msb.h"
+#include "elec241.h"
+
+// **************************************************************************
+// ******************* NB the following line for F429ZI *******************
+// * The following line is essential when using this ribbon connector *
+// **************************************************************************
+DigitalIn DO_NOT_USE(PB_12);  // DO NOT USE PB_12 as an OUTPUT under any circumstances
+                               // This Pin is connected to the 5VDC from the FPGA card and is 5V Tolerant
+// **********************************************************************************************************
+
+// Digital pins for SPI communication
+DigitalInOut mosi(MOSI_PIN);
+DigitalIn miso(MISO_PIN);
+DigitalOut sclk(SCLK_PIN);
+DigitalOut cs(CS_PIN); 
+
+// Status LEDs
+DigitalOut led1(LED1);
+DigitalOut led2(LED2);
+DigitalOut led3(LED3);
+
+// Blue Button
+InterruptIn blueButton(USER_BUTTON);
+
+// Variables to manage interrupts and data
+volatile bool blueButtonPressed = false;  // Flag to indicate blue button press
+volatile bool newDataAvailable = false;   // Flag to indicate new data available on serial
+volatile char receivedChar;               // Character received from serial input
+volatile uint8_t bitCounter = 0;          // Counter to keep track of number of bits received
+volatile uint16_t pattern = 0;            // Pattern received from serial input
+
+// Function prototypes
+void blueButtonISR();  // Interrupt service routine for blue button
+void serialISR();      // Interrupt service routine for serial input
+
+int main() {
+    // Setup initial conditions for SPI communication
+    mosi.mode(PinMode::PushPullNoPull); // Set MOSI pin to Push-Pull mode with no pull resistor
+    mosi.input();                        // Set MOSI pin as input
+    cs = 1;                              // Chip must be deselected, Chip Select is active LOW
+    sclk = 0;                            // SCLK is zero at rest
+
+    // Setup interrupts
+    blueButton.rise(&blueButtonISR);      // Attach interrupt handler for rising edge (button press)
+    Serial.attach(&serialISR, Serial.RxIrq); // Attach interrupt handler for serial input
+
+    // Wait for the blue button to be pressed before starting
+    printf("\n\nPress the BLUE button to start.\n");
+    while (blueButtonPressed == false);
+
+    // Main loop
+    while(true) {
+        // Check if new data is available
+        if (newDataAvailable) {
+            // Process received character
+            if (receivedChar == '0' || receivedChar == '1') {
+                // Convert character to bit and update pattern
+                pattern <<= 1;
+                pattern |= (receivedChar - '0');
+                bitCounter++;
+                printf("%c", receivedChar); // Echo the character back to the user
+                if (bitCounter == 8) {
+                    printf("\nPattern: %2.2X\n", pattern); // Print the input pattern in hexadecimal format
+                    led1 = !led1; // Toggle LED1 to indicate pattern input
+                    bitCounter = 0; // Reset bit counter
+                    pattern = 0; // Reset pattern
+                }
+            }
+            newDataAvailable = false; // Reset flag
+        }
+        
+        // Enter low-power sleep mode
+        // This will put the microcontroller to sleep until an interrupt occurs
+        __WFI();
+    }
+}
+
+// Interrupt service routine for blue button
+void blueButtonISR() {
+    blueButtonPressed = true; // Set flag to indicate button press
+}
+
+// Interrupt service routine for serial input
+void serialISR() {
+    // Read character from serial buffer
+    receivedChar = getchar();
+    newDataAvailable = true; // Set flag to indicate new data available
+}
