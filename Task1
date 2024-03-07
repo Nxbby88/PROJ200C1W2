@@ -1,0 +1,87 @@
+#include <stdint.h>
+#include <stdio.h>
+#include "uop_msb.h"
+#include "elec241.h"
+
+// **************************************************************************
+// ******************** NB the following line for F429ZI ******************** 
+// *    The following line is essential when using this ribbon connector    *
+// **************************************************************************
+DigitalIn DO_NOT_USE(PB_12);  // DO NOT USE PB_12 as an OUTPUT under any circumstances
+                               // This Pin is connected to the 5VDC from the FPGA card and is 5V Tolerant
+// **********************************************************************************************************
+
+// Digital input/output pins for SPI communication
+DigitalInOut mosi(MOSI_PIN);
+DigitalIn miso(MISO_PIN);
+DigitalOut sclk(SCLK_PIN);
+DigitalOut cs(CS_PIN); 
+
+// Status LEDs
+DigitalOut led1(LED1);
+DigitalOut led2(LED2);
+DigitalOut led3(LED3);
+
+// Blue Button
+DigitalIn blueButton(USER_BUTTON);
+
+int main() {
+    // Setup initial conditions for SPI communication
+    mosi.mode(PinMode::PushPullNoPull); // Set MOSI pin to Push-Pull mode with no pull resistor
+    mosi.input();                        // Set MOSI pin as input
+    cs = 1;                              // Chip must be deselected, Chip Select is active LOW
+    sclk = 0;                            // SCLK is zero at rest
+
+    // Initialize variables
+    uint16_t rx;                         // Variable to hold the 16-bit data returned from the SPI interface
+    bool lastBlueButtonState = false;    // Variable to hold the previous state of the blue button
+    uint16_t pattern = 0;                // Variable to hold the input pattern
+
+    // Wait for the blue button to be pressed before starting
+    printf("\n\nPress the BLUE button to start.\n");
+    while (blueButton == 0);
+
+    // Main loop
+    while(true) {
+        // Read the state of the blue button
+        bool blueButtonState = blueButton;
+
+        // Check if the state of the blue button has changed
+        if (blueButtonState != lastBlueButtonState) {
+            // If the blue button is pressed
+            if (blueButtonState) {
+                char inputPattern[9]; // Buffer to hold the input pattern
+                inputPattern[8] = '\0'; // Null terminator for the string
+                printf("Type in the pattern (8 bits) as a series of 1 and 0\n");
+                
+                // Prompt user to input the pattern
+                for (int i = 0; i < 8; ++i) {
+                    char c;
+                    while (true) {
+                        // Check if serial input is available
+                        if (Serial.readable()) {
+                            c = Serial.getc(); // Read a character from the serial input
+                            // Check if the character is valid (0 or 1)
+                            if (c == '0' || c == '1') {
+                                break;
+                            } else {
+                                wait_us(100000); // Wait for a short period before retrying
+                            }
+                        }
+                    }
+                    inputPattern[i] = c; // Store the character in the input pattern buffer
+                    printf("%c", c); // Echo the character back to the user
+                }
+                // Convert the binary string to an integer
+                pattern = strtol(inputPattern, nullptr, 2);
+                printf("\nPattern: %2.2X\n", pattern); // Print the input pattern in hexadecimal format
+                led1 = !led1; // Toggle LED1 to indicate pattern input
+            }
+            // Update the previous state of the blue button
+            lastBlueButtonState = blueButtonState;
+        }
+
+        // Add a short delay to prevent tight loop
+        wait_us(1000); // Adjust delay as needed
+    }
+}
